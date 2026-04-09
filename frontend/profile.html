@@ -19,8 +19,11 @@
             display: flex; 
             flex-direction: column; 
             position: relative;
-            overflow-x: hidden; /* 只鎖橫向 */
+            overflow-y: auto; 
+            overflow-x: hidden;
             width: 100%;
+            /* 避免某些系統鎖定滑動 */
+            touch-action: pan-y;
         }
 
         /* --- Header --- */
@@ -155,7 +158,7 @@
             <svg class="edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
         </div>
         
-        <div class="email">YYYT.gmail.com</div>
+        <div class="email" id="email-display">Loading...</div>
     </div>
 
     <div class="menu-list">
@@ -202,193 +205,308 @@
 
     <button class="debug-btn" onclick="resetMember()">[Reset]</button>
 
+    <script src="config.js"></script>
     <script>
-
-        // 進入個人資料頁面，鎖定滑動以利編輯
-        window.parent.postMessage('lockSwiping', '*');
-
-        // 離開頁面準備跳轉前，解鎖滑動
-        window.addEventListener('beforeunload', () => {
-            window.parent.postMessage('unlockSwiping', '*');
-        });
-
-        // --- 1. 資料庫初始化 ---
-        const dbName = "MemoriesDB";
+        // --- 1. 初始化與配置 ---
+        const dbName = DB_CONFIG.name;
+        const dbVersion = DB_CONFIG.version;
+        const API_BASE_URL = DB_CONFIG.apiUrl.replace(/\/$/, '');
         let db;
 
-        // ★ 配套措施 3：設定廣播頻道，名字改了要通知大家
+        // 廣播頻道：當名字或頭像更換時，通知 social.html 即時更新
         const channel = new BroadcastChannel('memory_update');
 
+        /**
+         * 初始化資料庫 (與 signup/comments 邏輯對齊)
+         */
         function initDB() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open(dbName, 8);
+                const request = indexedDB.open(dbName, dbVersion); 
+
                 request.onupgradeneeded = (e) => {
-                    db = e.target.result;
-                    if (!db.objectStoreNames.contains("user_profile")) db.createObjectStore("user_profile"); 
-                    if (!db.objectStoreNames.contains("posts_timeline")) db.createObjectStore("posts_timeline", { keyPath: "id" });
+                    const database = e.target.result;
+                    console.log(`正在同步資料庫結構...`);
+
+                    // 1. 社交牆主表 (對接 social.html)
+                    if (!database.objectStoreNames.contains('posts_timeline')) {
+                        database.createObjectStore('posts_timeline', { keyPath: 'id' });
+                    }
+                    // 2. 個人資料表 (對接 profile.html)
+                    if (!database.objectStoreNames.contains('user_profile')) {
+                        database.createObjectStore('user_profile');
+                    }
                 };
-                request.onsuccess = (e) => { db = e.target.result; resolve(db); };
-                request.onerror = (e) => reject(e);
+
+                request.onsuccess = (e) => { 
+                    db = e.target.result; 
+                    // 處理版本衝突
+                    db.onversionchange = () => {
+                        db.close();
+                        location.reload();
+                    };
+                    resolve(db); 
+                };
+                request.onerror = (e) => reject(e.target.error);
             });
         }
 
-        // --- 2. 頭像相關 ---
-        const fileInput = document.getElementById('hiddenFileInput');
+        // --- 2. 頁面載入邏輯 ---
         const avatarDisplay = document.getElementById('avatarDisplay');
         const usernameField = document.getElementById('username-field');
+        const fileInput = document.getElementById('hiddenFileInput');
 
-        async function loadAvatar() {
-            if (!db) await initDB();
-            const tx = db.transaction("user_profile", "readonly");
-            const req = tx.objectStore("user_profile").get("avatar"); 
-            req.onsuccess = (e) => {
-                const result = e.target.result;
-                if (result) {
-                    const url = (result instanceof Blob || result instanceof File) ? URL.createObjectURL(result) : result;
-                    avatarDisplay.innerHTML = `<img src="${url}" alt="Profile">`;
-                } else {
-                    avatarDisplay.innerHTML = ''; // 沒照片就顯示背景色
-                }
-            };
-        }
+        window.addEventListener('load', async () => {
+            await initDB();
 
-        // ★ 配套措施 4：頁面載入時讀取名字、修改完後儲存名字
-        window.addEventListener('load', () => {
-            // 讀取名字
+            // 1. 讀取名字
             const savedName = localStorage.getItem('myProfileName');
-            if (savedName) {
+            if (savedName && usernameField) {
                 usernameField.innerText = savedName;
-            } else {
-                usernameField.innerText = "Me";
             }
 
+            // 2. 讀取 Email
             const savedEmail = localStorage.getItem('myProfileEmail');
-            const emailDiv = document.querySelector('.email'); // 抓取顯示 Email 的 div
-            if (savedEmail) {
+            const emailDiv = document.querySelector('.email'); 
+            if (savedEmail && emailDiv) {
                 emailDiv.innerText = savedEmail;
             }
+
+            // 3. 載入頭像 (雲端優先，本地備份)
+            loadAvatar();
+
+            // 4. 檢查 VIP 狀態
             checkStatus();
         });
 
-        // 當使用者打完字，點擊旁邊(失去焦點)時觸發
-        function saveName() {
-            const newName = usernameField.innerText.trim();
-            
-            // 如果刪光了，預設回 Me
-            if (!newName) {
-                usernameField.innerText = "Me";
-                localStorage.setItem('myProfileName', "Me");
-            } else {
-                // 存入手機記憶體
-                localStorage.setItem('myProfileName', newName);
+        /**
+         * 載入頭像邏輯
+         */
+        async function loadAvatar() {
+            // 確保 db 已經初始化
+            if (!db) await initDB(); 
+
+            const remoteUrl = localStorage.getItem('avatar_url'); 
+            if (remoteUrl) {
+                const finalUrl = `${remoteUrl}?t=${new Date().getTime()}`;
+                avatarDisplay.innerHTML = `<img src="${finalUrl}" alt="Profile">`;
+                return;
             }
 
-            // ★ 發送通知給 social.html
-            channel.postMessage('updated');
+            // 離線模式讀取
+            try {
+                const tx = db.transaction("user_profile", "readonly");
+                const store = tx.objectStore("user_profile");
+                const req = store.get("avatar"); 
+                
+                req.onsuccess = (e) => {
+                    const result = e.target.result;
+                    if (result) {
+                        const url = (result instanceof Blob || result instanceof File) 
+                                    ? URL.createObjectURL(result) 
+                                    : result;
+                        avatarDisplay.innerHTML = `<img src="${url}" alt="Profile">`;
+                    } else {
+                        // 給一個預設大頭貼
+                        avatarDisplay.innerHTML = `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(localStorage.getItem('myProfileName') || 'User')}&background=9C7C66&color=fff" alt="Profile">`;
+                    }
+                };
+            } catch (e) {
+                console.warn("目前無法讀取本地頭像快取");
+            }
         }
 
-        // 按 Enter 鍵時也自動存檔並跳開
-        usernameField.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                usernameField.blur(); // 觸發 saveName
-            }
-        });
+        /**
+         * 儲存名字 (失去焦點或按 Enter 時)
+         */
+        async function saveName() {
+            const newName = usernameField.innerText.trim();
+            const finalName = newName || "Me";
+            const email = localStorage.getItem('myProfileEmail');
+            
+            // 1. 立即更新本地 UI 與快取
+            usernameField.innerText = finalName;
+            localStorage.setItem('myProfileName', finalName);
 
+            // 2. 同步到本地資料庫 (供留言板即時抓取)
+            if (db) {
+                const tx = db.transaction("user_profile", "readwrite");
+                tx.objectStore("user_profile").put(finalName, "username");
+            }
+
+            // 3. 發送廣播通知其他分頁 (例如 Social 頁面)
+            channel.postMessage('updated');
+
+            // 4. 【核心補強】發送至後端永久儲存
+            if (email) {
+                try {
+                    const formData = new FormData();
+                    formData.append('email', email);
+                    formData.append('name', finalName);
+
+                    const response = await fetch(`${API_BASE_URL}/update_profile_name`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        console.log("✅ 後端名字更新成功");
+                    } else {
+                        console.error("❌ 後端名字更新失敗");
+                    }
+                } catch (err) {
+                    console.error("❌ 網路錯誤，名字僅儲存在本地:", err);
+                }
+            }
+        }
+
+        /**
+         * 頭像上傳邏輯
+         */
         function triggerUpload() { fileInput.click(); }
 
         fileInput.addEventListener('change', async function(e) {
             const file = e.target.files[0];
             if (!file) return;
+
+            // 1. 立即預覽
+            const previewUrl = URL.createObjectURL(file);
+            avatarDisplay.innerHTML = `<img src="${previewUrl}" alt="Profile">`;
             avatarDisplay.style.opacity = '0.5';
+
+            // 2. 獲取 Email (確保有拿到)
+            const email = localStorage.getItem('myProfileEmail');
+            if (!email) {
+                alert("找不到登入資訊，請重新登入");
+                window.top.location.href = "login.html";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);   // 對應後端 file: UploadFile
+            formData.append('email', email); // 對應後端 email: str
+
             try {
-                if (!db) await initDB();
-                const tx = db.transaction("user_profile", "readwrite");
-                tx.objectStore("user_profile").put(file, "avatar");
-                tx.oncomplete = () => {
-                    const url = URL.createObjectURL(file);
-                    avatarDisplay.innerHTML = `<img src="${url}" alt="Profile">`;
-                    avatarDisplay.style.opacity = '1';
-                    // 頭像改了也要通知主頁
-                    channel.postMessage('updated');
-                };
+                console.log("正在發送請求至:", `${API_BASE_URL}/upload_avatar`);
+                const response = await fetch(`${API_BASE_URL}/upload_avatar`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                console.log("後端回傳結果:", data);
+
+                if (data.success || data.status === 'success') {
+                    // 🌟 修正點：統一存入 myProfileAvatar，這樣 home.html 才抓得到
+                    const finalAvatarUrl = data.avatar_url;
+                    window.userAvatarUrl = "https://ui-avatars.com/api/?name=User&background=9C7C66&color=fff";
+                    localStorage.setItem('myProfileAvatar', finalAvatarUrl); 
+                    localStorage.setItem('avatar_url', finalAvatarUrl); // 備份原本的
+
+                    // 3. 同時存入 IndexedDB 備份
+                    const tx = db.transaction("user_profile", "readwrite");
+                    tx.objectStore("user_profile").put(file, "avatar"); 
+                    
+                    // 4. 通知其他頁面 (Home 頁面會收到訊號並刷新)
+                    channel.postMessage('updated'); 
+                    
+                    alert("✅ 頭像上傳成功！");
+                } else {
+                    alert("❌ 上傳失敗: " + (data.detail || "未知錯誤"));
+                }
             } catch (err) {
-                console.error(err);
+                console.error("❌ 網路請求錯誤:", err);
+                alert("無法連線至伺服器，請檢查後端是否啟動");
+            } finally {
                 avatarDisplay.style.opacity = '1';
             }
         });
 
-        // --- 其他功能 ---
-        const row = document.getElementById('subscriptionRow');
-        const text = document.getElementById('subText');
-        function checkStatus() {
-            if (localStorage.getItem('isPremiumUser') === 'true') {
-                row.classList.add('is-premiumUser');
-                text.textContent = "Subscription (Active)";
-            } else {
-                row.classList.remove('is-premiumUser');
-                text.textContent = "Subscription";
-            }
-        }
-        function handleSubscription() {
-            if (localStorage.getItem('isPremiumUser') !== 'true') {
-                // 加上 ?from=profile
-                window.top.location.href = "payment.html?from=profile";
-            }
-        }
-        async function resetMember() {
-            if(confirm("確定要重置所有資料嗎？")) {
-                localStorage.clear(); 
-                if(!db) await initDB();
-                const tx = db.transaction("user_profile", "readwrite");
-                tx.objectStore("user_profile").clear();
-                tx.oncomplete = () => location.reload();
-            }
-        }
-        function logout() {
-            if(confirm('Are you sure you want to log out?')) {
-                localStorage.removeItem('myProfileName');
-                localStorage.removeItem('myProfileEmail');
-                localStorage.removeItem('isPremiumUser');
-                window.top.location.href = "login.html"; 
-            }
-        }
-
+        /**
+         * 檢查 VIP 狀態
+         */
         async function checkStatus() {
             const email = localStorage.getItem('myProfileEmail');
             const row = document.getElementById('subscriptionRow');
             const text = document.getElementById('subText');
-
             if (!email) return;
 
             try {
-                // 1. 向後端詢問最新身分
-                const response = await fetch(`http://127.0.0.1:8000/check_vip/${email}`);
+                const response = await fetch(`${API_BASE_URL}/check_vip/${email}`);
                 const data = await response.json();
                 const isVip = data.is_vip;
 
-                // 2. 同步本地緩存
                 localStorage.setItem('isPremiumUser', isVip.toString());
 
-                // 3. 根據身分切換 UI 樣式
                 if (isVip) {
                     row.classList.add('is-premiumUser');
-                    text.innerHTML = 'Subscription <span style="color: #D4AF37; font-size: 12px; margin-left: 5px;">★ Premium</span>';
-                    // 加強視覺：名字旁邊也加個勾勾
-                    if (!usernameField.innerHTML.includes('bx-badge-check')) {
-                        usernameField.innerHTML += ' <i class="bx bxs-badge-check" style="color:#D4AF37; font-size:16px;"></i>';
-                    }
+                    text.textContent = "Subscription (Active)";
                 } else {
                     row.classList.remove('is-premiumUser');
                     text.textContent = "Subscription";
                 }
             } catch (error) {
-                console.error("會員驗證連線失敗:", error);
-                // 離線備案：維持原本本地判斷
+                console.error("連線失敗，讀取本地狀態");
                 if (localStorage.getItem('isPremiumUser') === 'true') {
                     row.classList.add('is-premiumUser');
-                    text.textContent = "Subscription (Active)";
                 }
+            }
+        }
+
+        // --- 跳轉與登出 ---
+        function handleSubscription() {
+            if (localStorage.getItem('isPremiumUser') !== 'true') {
+                window.top.location.href = "payment.html?from=profile";
+            }
+        }
+
+        async function resetMember() {
+            if(confirm("確定要重置所有資料並登出嗎？")) {
+                localStorage.clear(); 
+                const tx = db.transaction(["user_profile", "posts_timeline"], "readwrite");
+                tx.objectStore("user_profile").clear();
+                tx.objectStore("posts_timeline").clear();
+                tx.oncomplete = () => window.top.location.href = "login.html";
+            }
+        }
+
+        async function logout() {
+            if(!confirm('Are you sure you want to log out?')) return;
+
+            try {
+                console.log("👋 執行登出程序...");
+
+                // 1. 先清空 localStorage (這步最快，也最重要)
+                localStorage.clear();
+
+                // 2. 嘗試關閉並刪除資料庫 (加入錯誤處理，防止沒 db 時崩潰)
+                if (db) {
+                    db.close();
+                }
+                
+                // 刪除 IndexedDB
+                const deleteReq = indexedDB.deleteDatabase(dbName);
+                
+                deleteReq.onsuccess = () => {
+                    console.log("✅ 資料庫已刪除");
+                    // 3. 強制跳轉到登入頁，使用 window.top 確保跳出 iframe
+                    window.top.location.href = "login.html";
+                };
+
+                deleteReq.onerror = () => {
+                    // 就算資料庫刪除失敗，還是要強制跳轉，不能卡住使用者
+                    window.top.location.href = "login.html";
+                };
+
+                // 4. 安全保險：如果 1 秒內沒跳轉，強制執行
+                setTimeout(() => {
+                    window.top.location.href = "login.html";
+                }, 1000);
+
+            } catch (e) {
+                console.error("登出時發生錯誤:", e);
+                // 發生任何錯誤，最後的大絕招就是直接洗掉 localStorage 並跳轉
+                localStorage.clear();
+                window.top.location.href = "login.html";
             }
         }
     </script>

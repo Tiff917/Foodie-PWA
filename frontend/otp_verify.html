@@ -110,49 +110,54 @@
         <button class="verify-btn" id="verifyBtn" disabled>Verify</button>
     </div>
 
+    <script src="config.js"></script>
     <script>
-        // 1. iframe 與 PWA 殼層通訊
+        // --- 1. iframe 與 PWA 殼層通訊 ---
         window.parent.postMessage('lockSwiping', '*');
         window.addEventListener('beforeunload', () => window.parent.postMessage('unlockSwiping', '*'));
 
         const realInput = document.getElementById('real-input');
-        const boxes = [document.getElementById('box0'), document.getElementById('box1'), document.getElementById('box2'), document.getElementById('box3')];
+        const boxes = [
+            document.getElementById('box0'), 
+            document.getElementById('box1'), 
+            document.getElementById('box2'), 
+            document.getElementById('box3')
+        ];
         const verifyBtn = document.getElementById('verifyBtn');
         const autofillHint = document.getElementById('autofillHint');
         const randomCodeHint = document.getElementById('randomCodeHint');
 
         let generatedOTP = "";
 
-        // 2. 初始化：產生 Random OTP
+        // --- 2. 初始化：產生 Random OTP ---
         function initOTP() {
+            // 產生 4 位數隨機碼
             generatedOTP = Math.floor(1000 + Math.random() * 9000).toString();
-            randomCodeHint.textContent = generatedOTP;
+            if (randomCodeHint) randomCodeHint.textContent = generatedOTP;
             
-            // 模擬簡訊在 1.5 秒後到達
+            // 模擬簡訊在 1.5 秒後到達 (UX 驚喜感)
             setTimeout(() => {
-                autofillHint.style.display = 'block';
+                if (autofillHint) autofillHint.style.display = 'block';
             }, 1500);
 
-            // 自動聚焦輸入框，叫出鍵盤
+            // 自動聚焦輸入框
             realInput.focus();
         }
 
-        // 3. 處理輸入邏輯
+        // --- 3. 處理輸入邏輯 (保持原樣，這部分寫得很棒) ---
         realInput.addEventListener('input', (e) => {
-            const val = e.target.value;
-            
-            // 更新盒子內容
+            let val = e.target.value.replace(/\D/g, '').substring(0, 4); // 強制數位且限長度
+            e.target.value = val;
+
             boxes.forEach((box, i) => {
                 box.textContent = val[i] || "";
                 box.classList.remove('active');
             });
 
-            // 設定 active 狀態 (模擬游標)
             if (val.length < 4) {
                 boxes[val.length].classList.add('active');
             }
 
-            // 啟用/禁用按鈕
             verifyBtn.disabled = (val.length !== 4);
         });
 
@@ -161,28 +166,50 @@
             realInput.focus();
         });
 
-        // 4. 自動填入功能
+        // --- 4. 自動填入功能 ---
         autofillHint.addEventListener('click', () => {
             realInput.value = generatedOTP;
-            // 手動觸發 input 事件來更新 UI
             realInput.dispatchEvent(new Event('input'));
             autofillHint.style.display = 'none';
         });
 
-        // 5. 驗證跳轉
+        // --- 5. 驗證跳轉 (關鍵修改點) ---
         verifyBtn.addEventListener('click', () => {
             if (realInput.value === generatedOTP) {
                 verifyBtn.textContent = 'Verifying...';
+                verifyBtn.disabled = true;
+
                 setTimeout(() => {
+                    // 💡 關鍵對接邏輯：
+                    // 從 URL 參數或 localStorage 取得 email
+                    const urlParams = new URLSearchParams(window.location.search);
+                    let email = urlParams.get('email');
+
+                    // 如果 URL 沒帶，就看 localStorage (通常忘記密碼第一步會存入)
+                    if (!email) {
+                        email = localStorage.getItem('myProfileEmail');
+                    } else {
+                        // 如果 URL 有帶，順便同步到 localStorage，確保下一頁 reset_password 抓得到
+                        localStorage.setItem('myProfileEmail', email);
+                    }
+
+                    if (!email) {
+                        alert("Error: User identity lost. Please try again.");
+                        window.top.location.href = 'login.html';
+                        return;
+                    }
+
+                    console.log("OTP 驗證通過，身分確認為:", email);
                     window.parent.postMessage('unlockSwiping', '*');
-                    // 帶上 email 跳轉到重設密碼
-                    const email = new URLSearchParams(window.location.search).get('email');
-                    window.top.location.href = `reset_password.html?email=${email}`;
+
+                    // 跳轉到重設密碼頁面
+                    window.top.location.href = `reset_password.html?email=${encodeURIComponent(email)}`;
                 }, 1000);
             } else {
                 alert("Invalid OTP code. Try again.");
                 realInput.value = "";
                 realInput.dispatchEvent(new Event('input'));
+                realInput.focus();
             }
         });
 

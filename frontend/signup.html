@@ -274,20 +274,39 @@
         <div class="home-indicator"></div>
     </div>
 
-   <script>
+   <script src="config.js"></script>
+    <script>
+        // 1. 取得全域配置
+        const dbName = DB_CONFIG.name;
+        const dbVersion = DB_CONFIG.version;
 
-        // 1. 進入註冊頁面時，鎖定主殼層滑動以利輸入
+        // 2. 進入註冊頁面時，鎖定主殼層滑動
         window.parent.postMessage('lockSwiping', '*');
 
-        // 2. 離開頁面準備跳轉前，解鎖滑動
+        // 3. 離開頁面準備跳轉前，解鎖滑動
         window.addEventListener('beforeunload', () => {
             window.parent.postMessage('unlockSwiping', '*');
         });
 
-        const togglePassword = document.getElementById('togglePassword');
-        const passwordInput = document.getElementById('passwordInput');
+        // --- 資料庫初始化函式 ---
+        function initUserDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, dbVersion);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains("user_profile")) {
+                        db.createObjectStore("user_profile");
+                    }
+                    if (!db.objectStoreNames.contains("posts_timeline")) {
+                        db.createObjectStore("posts_timeline", { keyPath: "id" });
+                    }
+                };
+                request.onsuccess = (e) => resolve(e.target.result);
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
+
         const signupBtn = document.getElementById('signupBtn');
-        
         const inputs = {
             name: { input: document.getElementById('nameInput'), wrapper: document.getElementById('nameWrapper') },
             dob: { input: document.getElementById('dobInput'), wrapper: document.getElementById('dobWrapper') },
@@ -296,24 +315,14 @@
             password: { input: document.getElementById('passwordInput'), wrapper: document.getElementById('passwordWrapper') }
         };
 
-        // 1. 密碼顯示切換
-        togglePassword.addEventListener('click', function () {
-            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-            passwordInput.setAttribute('type', type);
-            this.classList.toggle('bx-hide');
-            this.classList.toggle('bx-show');
-        });
-
-        // 2. 註冊按鈕驗證邏輯
-        signupBtn.addEventListener('click', function () {
+        // 註冊按鈕驗證與對接邏輯
+        signupBtn.addEventListener('click', async function () {
             let isValid = true;
             
             for (const key in inputs) {
                 const field = inputs[key];
                 const value = field.input.value.trim();
-                
                 field.wrapper.classList.remove('error');
-
                 if (value === "") {
                     field.wrapper.classList.add('error');
                     isValid = false;
@@ -321,7 +330,6 @@
             }
 
             if (isValid) {
-                // 整理要傳送的資料
                 const userData = {
                     name: inputs.name.input.value.trim(),
                     dob: inputs.dob.input.value.trim(),
@@ -331,46 +339,64 @@
                 };
 
                 signupBtn.textContent = '處理中...';
-                signupBtn.disabled = true; // 防止重複點擊
+                signupBtn.disabled = true;
 
-                // 向後端發送請求 (本地端測試網址為 127.0.0.1:8000)
-                fetch('http://127.0.0.1:8000/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(userData)
-                })
-                .then(async response => {
+                try {
+                    const response = await fetch(`${DB_CONFIG.apiUrl}/register`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(userData)
+                    });
+
                     const data = await response.json();
+
                     if (response.ok) {
-                        alert('註冊成功！');
-                        // 存入 localStorage 當作登入憑證
+                        console.log("註冊成功，清理環境中...");
+
+                        // 1. 清空舊快取
+                        localStorage.clear(); 
                         localStorage.setItem('myProfileName', userData.name);
-                        localStorage.setItem('myProfileEmail', userData.email);
-                        // 跳轉頁面
-                        window.top.location.href = "onboarding.html";
+                        localStorage.setItem('myProfileEmail', userData.email.toLowerCase());
+                        localStorage.setItem('isPremiumUser', 'false');
+
+                        // 2. 徹底刪除舊資料庫 (確保乾淨)
+                        const dbDeleteReq = indexedDB.deleteDatabase(dbName);
+                        
+                        dbDeleteReq.onsuccess = async () => {
+                            // 3. 重新建立資料表並存入姓名
+                            const db = await initUserDB();
+                            const tx = db.transaction("user_profile", "readwrite");
+                            tx.objectStore("user_profile").put(userData.name, "username");
+
+                            tx.oncomplete = () => {
+                                console.log("✅ 全部完成，導向導覽頁");
+                                window.top.location.href = "onboarding.html";
+                            };
+                        };
                     } else {
-                        // 顯示後端傳回的錯誤訊息（例如 Email 重複）
-                        alert('註冊失敗：' + data.detail);
+                        alert('註冊失敗：' + (data.detail || '請檢查資料是否正確'));
                         signupBtn.textContent = 'Sign up';
                         signupBtn.disabled = false;
                     }
-                })
-                .catch(error => {
-                    alert('無法連線到伺服器，請確認後端程式是否已啟動！');
+                } catch (error) {
+                    console.error("Signup error:", error);
+                    alert('伺服器連線失敗');
                     signupBtn.textContent = 'Sign up';
                     signupBtn.disabled = false;
-                });
+                }
             }
         });
-        
-        // 按 Enter 觸發
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                signupBtn.click();
-            }
+
+        // 密碼隱藏顯示切換
+        document.getElementById('togglePassword').addEventListener('click', function () {
+            const passwordInput = document.getElementById('passwordInput');
+            const isPw = passwordInput.type === 'password';
+            passwordInput.type = isPw ? 'text' : 'password';
+            this.classList.toggle('bx-hide', !isPw);
+            this.classList.toggle('bx-show', isPw);
         });
+
+        document.addEventListener('keypress', (e) => { if (e.key === 'Enter') signupBtn.click(); });
     </script>
 </body>
 </html>

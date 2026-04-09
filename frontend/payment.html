@@ -118,132 +118,133 @@
         </button>
     </div>
 
-    <a href="#" target="_top" class="cancel-link">Cancel</a>
+    <a href="#" target="_top" class="cancel-link" id="cancelLink">Cancel</a>
 
+    <script src="config.js"></script>
     <script>
+        // --- 1. 配置與初始化 ---
+        const API_BASE_URL = DB_CONFIG.apiUrl.replace(/\/$/, '');
 
-        // 在頁面載入時設定取消連結
-        document.addEventListener('DOMContentLoaded', () => {
+        // 🌟 強力跳轉邏輯：精準回歸來源頁
+        function forceNavigateBack() {
             const urlParams = new URLSearchParams(window.location.search);
-            const source = urlParams.get('from');
-            const cancelLink = document.getElementById('cancelLink');
+            const source = urlParams.get('from'); 
             
+            // 取得當前根目錄路徑，確保跳轉不會因為路徑問題失效
+            const baseUrl = window.location.origin + window.location.pathname.rsplit('/', 1)[0];
+
+            let targetUrl = "";
+
             if (source === 'social') {
-                cancelLink.href = "index.html?tab=social";
+                // 如果是從 Social 來的，強制回 Index 並指定 tab (保持 PWA 殼層)
+                targetUrl = "index.html?tab=social";
+            } else if (source === 'profile') {
+                // 如果是從 Profile 來的，精準回到 profile.html
+                targetUrl = "profile.html"; 
             } else {
-                cancelLink.href = "profile.html";
+                // 預設保險路徑
+                targetUrl = "index.html";
             }
-        });
 
-        // 通知外層殼層：進入付款頁面，鎖定左右滑動
-        window.parent.postMessage('lockSwiping', '*');
+            console.log("🚀 執行強力導航回歸：", targetUrl);
 
-        // 當頁面關閉或跳轉前，解鎖滑動
-        window.addEventListener('unload', () => {
+            // 1. 通知父層解鎖 (非常重要)
             window.parent.postMessage('unlockSwiping', '*');
-        });
 
-        // 1. 選取 DOM 元素
-        const payBtn = document.getElementById('payBtn');
-        const spinner = document.getElementById('spinner');
-        const btnText = document.getElementById('btnText');
-        
-        // 透過 placeholder 選取輸入框 (為了不改動您的 HTML 結構)
+            // 2. 使用 top.location 直接覆蓋整個瀏覽器網址列，並加上 timestamp 防止快取
+            const finalUrl = `${targetUrl}${targetUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+            
+            // 3. 強制跳轉
+            window.top.location.href = finalUrl;
+        }
+
+        // 輔助函式：處理路徑
+        String.prototype.rsplit = function(sep, maxsplit) {
+            var split = this.split(sep);
+            return maxsplit ? [ split.slice(0, -maxsplit).join(sep), split.slice(-maxsplit).join(sep) ] : split;
+        }
+        // --- 2. 輸入框 UI 互動邏輯 ---
+
         const inputCard = document.getElementById('inputCard');
-        const inputName = document.querySelector('input[placeholder="Name on card"]');
         const inputExpiry = document.querySelector('input[placeholder="MM/YY"]');
         const inputCvv = document.querySelector('input[placeholder="123"]');
+        const cardDisplay = document.querySelector('.card-number');
 
-        // 2. 輸入限制邏輯 (即時監聽)
-
-        // [卡號]：純數字、每4位加空格、最多16位數字
-        inputCard.addEventListener('input', function (e) {
-            let value = e.target.value.replace(/\D/g, ''); // 移除所有非數字
-            value = value.substring(0, 16); // 限制最大長度
-            // 每4位加空格
-            let formatted = value.match(/.{1,4}/g)?.join(' ') || value;
+        // 卡號格式化 (0000 0000 0000 0000)
+        inputCard.addEventListener('input', e => {
+            let v = e.target.value.replace(/\D/g, '').substring(0, 16);
+            let formatted = v.match(/.{1,4}/g)?.join(' ') || v;
             e.target.value = formatted;
+            cardDisplay.textContent = formatted || "•••• •••• •••• ••••";
         });
 
-        // [持卡人]：純英文、空格 (移除數字和符號)
-        inputName.addEventListener('input', function (e) {
-            e.target.value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
-        });
-
-        // [到期日]：純數字、自動加斜線、限制月份邏輯
-        inputExpiry.addEventListener('input', function (e) {
-            let value = e.target.value.replace(/\D/g, ''); // 移除非數字
-            value = value.substring(0, 4); // 限制只能輸入4個數字 (MMYY)
-
-            if (value.length >= 2) {
-                // 自動插入斜線
-                e.target.value = value.substring(0, 2) + '/' + value.substring(2);
+        // 到期日格式化 (MM/YY)
+        inputExpiry.addEventListener('input', e => {
+            let v = e.target.value.replace(/\D/g, '').substring(0, 4);
+            if (v.length >= 3) {
+                e.target.value = v.substring(0, 2) + '/' + v.substring(2);
             } else {
-                e.target.value = value;
+                e.target.value = v;
             }
         });
 
-        // [CVV]：純數字、最多3碼
-        inputCvv.addEventListener('input', function (e) {
-            let value = e.target.value.replace(/\D/g, '');
-            e.target.value = value.substring(0, 3);
+        // CVV 限制數字
+        inputCvv.addEventListener('input', e => {
+            e.target.value = e.target.value.replace(/\D/g, '').substring(0, 3);
         });
 
-        // 3. 付款按鈕點擊事件 (最終檢查)
-        payBtn.addEventListener('click', function() {
-            // 驗證邏輯
-            const rawCard = inputCard.value.replace(/\s/g, ''); // 移除空格後的卡號
-            const rawExpiry = inputExpiry.value;
-            const rawCvv = inputCvv.value;
-            const rawName = inputName.value.trim();
+        // 取消按鈕
+        cancelLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            forceNavigateBack();
+        });
 
-            let errorMessage = "";
+        // --- 3. 付款點擊 ---
+        payBtn.addEventListener('click', async function() {
+            const email = localStorage.getItem('myProfileEmail');
+            if (!email) return alert("請先登入");
 
-            if (rawCard.length !== 16) {
-                errorMessage = "卡號格式錯誤 (需為16碼)";
-            } else if (rawName.length === 0) {
-                errorMessage = "請輸入持卡人姓名";
-            } else if (rawExpiry.length !== 5 || !rawExpiry.includes('/')) {
-                errorMessage = "到期日格式錯誤 (MM/YY)";
-            } else if (rawCvv.length !== 3) {
-                errorMessage = "CVV 需為 3 碼";
-            }
-
-            // 如果有錯誤訊息，跳出警告並停止
-            if (errorMessage) {
-                alert(errorMessage);
-                return; 
-            }
-
-            // --- 驗證通過，開始模擬付款動畫 ---
-            payBtn.style.opacity = "0.8";
+            // UI 狀態：顯示載入中
+            document.getElementById('spinner').style.display = 'inline-block';
+            document.getElementById('btnText').innerText = "Processing...";
             payBtn.disabled = true;
-            spinner.style.display = "inline-block";
-            btnText.textContent = "Processing...";
 
-            setTimeout(() => {
-                const userEmail = localStorage.getItem('myProfileEmail'); // 抓取登入時存的 Email
+            try {
+                // 發送升級 VIP 請求
+                const response = await fetch(`${API_BASE_URL}/upgrade_premium?email=${email}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && (result.status === "success" || result.is_vip === true)) {
+                    localStorage.setItem('isPremiumUser', 'true');
+                    
+                    const channel = new BroadcastChannel('memory_update');
+                    channel.postMessage('updated');
 
-                // --- 新增：通知後端升級會員 ---
-                fetch('http://127.0.0.1:8000/upgrade_member', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: userEmail })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    console.log("後端同步成功:", data);
-                    localStorage.setItem('isPremiumUser', 'true'); // 前端緩存也存一份
                     alert("Payment Successful! You are now a Premium Member.");
                     
-                    // 跳轉邏輯維持不變
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const source = urlParams.get('from');
-                    window.top.location.href = (source === 'social') ? "index.html?tab=social" : "profile.html";
-                })
-                .catch(err => alert("雖然付款成功，但資料同步失敗，請聯絡客服"));
-            }, 2000);
-    });
+                    // 執行精準導航回歸
+                    forceNavigateBack(); 
+                } else {
+                    alert("Payment Failed: " + (result.detail || "Unknown error"));
+                }
+            } catch (err) {
+                console.error("Payment Error:", err);
+                alert("Network error, please try again.");
+            } finally {
+                document.getElementById('spinner').style.display = 'none';
+                document.getElementById('btnText').innerText = "Pay $9.99 / Month";
+                payBtn.disabled = false;
+            }
+        });
+
+        // 取消連結
+        document.getElementById('cancelLink').addEventListener('click', (e) => {
+            e.preventDefault();
+            forceNavigateBack();
+        });
     </script>
 </body>
 </html>

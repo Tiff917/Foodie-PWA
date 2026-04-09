@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>New Post</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+        
+    <meta name="mobile-web-app-capable" content="yes">
+        
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         /* --- 1. 基礎設定 --- */
@@ -70,7 +75,8 @@
         .grid-item.selected .overlay-mask { display: block; }
         .check-circle {
             position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; z-index: 10; display: none; 
-            border: 2px solid rgba(255, 255, 255, 0.9); background-color: rgba(0, 0, 0, 0.2); 
+            border: 1px solid rgba(0,0,0,0.1); 
+            background-color: #dbdbdb; 
             box-shadow: 0 0 4px rgba(0,0,0,0.2); justify-content: center; align-items: center;
             font-size: 11px; font-weight: 700; color: white; transition: transform 0.1s ease;
         }
@@ -91,8 +97,8 @@
 <body>
 
     <div class="header">
-        <button class="header-btn" onclick="window.parent.postMessage('unlockSwiping', '*'); window.top.location.href='index.html'">Back</button>
-        <div class="header-title">Post</div>
+        <button class="header-btn" id="backBtn">Back</button>
+        <div class="header-title" id="pageTitle">Post</div>
         <button class="header-btn finish" id="shareBtn">Finish</button>
     </div>
 
@@ -111,112 +117,104 @@
             </div>
         </div>
         
-        <div class="grid-gallery" id="gridGallery"></div>
+        <div class="grid-gallery" id="feedGrid"></div>
         <input type="file" id="imageLoader" accept="image/*" multiple style="display: none;">
     </div>
 
     <button class="reset-btn" onclick="hardReset()">⚠️ 重置資料庫</button>
 
     <canvas id="compressCanvas"></canvas>
-
+    
+    <script src="config.js"></script>
     <script>
         lucide.createIcons();
-        const dbName = "MemoriesDB";
+        
+        // --- 1. 配置 ---
+        const dbName = DB_CONFIG.name;
+        const dbVersion = DB_CONFIG.version; 
+        const API_BASE_URL = DB_CONFIG.apiUrl; 
+        const channel = new BroadcastChannel('memory_update'); 
         let db;
 
-        // --- 1. 變數與 DOM 綁定 ---
+        // --- 2. DOM ---
         const mainPreviewImg = document.getElementById('mainPreviewImg');
         const emptyPlaceholder = document.getElementById('emptyPlaceholder');
-        const gridGallery = document.getElementById('gridGallery');
+        const feedGrid = document.getElementById('feedGrid');
         const multiSelectBtn = document.getElementById('multiSelectBtn');
         const tagFriendBtn = document.getElementById('tagFriendBtn');
-        const locationBtn = document.getElementById('locationBtn');
         const shareBtn = document.getElementById('shareBtn');
-        const imageLoader = document.getElementById('imageLoader');
+        const backBtn = document.getElementById('backBtn');
+        const locationBtn = document.getElementById('locationBtn');
+        const pageTitle = document.getElementById('pageTitle');
+
+        let pendingImages = []; // { type: 'file'|'url', data: File|String }
+        let selectedIndices = []; // 選取的順序
         
-        // 狀態變數
-        let pendingImages = []; // 這裡現在存的是 File 物件，不是 Base64 字串
-        let selectedIndices = [];
+        // --- 🌟 編輯模式變數 ---
+        let editPostId = new URLSearchParams(window.location.search).get('id');
+        let originalUrls = []; // 用於對比物理刪除
         let isSelectMode = false;
-        let isFriendTagged = false;
-        let currentLocation = null;
         let currentMainIndex = -1;
+        const createdUrls = new Set();
 
-        // --- 2. 資料庫功能 ---
-        async function hardReset() {
-            if(!confirm("這會清除所有暫存資料以修復卡頓，確定嗎？")) return;
-            if(db) { db.close(); db = null; }
-            const req = indexedDB.deleteDatabase(dbName);
-            req.onsuccess = () => { alert("重置完成！頁面將重新整理。"); location.reload(); };
-            req.onerror = () => { alert("無法刪除，請嘗試關閉其他分頁後再試。"); };
-            req.onblocked = () => { alert("重置被阻擋！請關閉其他開啟此網站的分頁。"); };
-        }
-
+        // --- 3. 初始化 ---
         function initDB() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open(dbName, 8);
-                
-                request.onblocked = () => alert("資料庫被鎖定！請關閉其他分頁後重新整理。");
-
+                const request = indexedDB.open(dbName, dbVersion);
                 request.onupgradeneeded = (e) => {
-                    db = e.target.result;
-                    if (!db.objectStoreNames.contains("posts_timeline")) db.createObjectStore("posts_timeline", { keyPath: "id" });
-                    if (!db.objectStoreNames.contains("all_photos")) db.createObjectStore("all_photos", { autoIncrement: true });
+                    const database = e.target.result;
+                    const stores = ["posts", "users", "posts_timeline", "user_profile"];
+                    stores.forEach(store => {
+                        if (!database.objectStoreNames.contains(store)) {
+                            database.createObjectStore(store, { keyPath: "id" });
+                        }
+                    });
                 };
-
-                request.onsuccess = (e) => { 
-                    db = e.target.result; 
-                    if (!db.objectStoreNames.contains("posts_timeline") || !db.objectStoreNames.contains("all_photos")) {
-                        db.close(); hardReset(); return;
-                    }
-                    resolve(db); 
-                };
+                request.onsuccess = (e) => { db = e.target.result; resolve(db); };
                 request.onerror = (e) => reject(e);
             });
         }
 
-        // --- 3. 核心工具：取得圖片連結 ---
-        // 這是實現「秒速預覽」的關鍵
-        function getImageUrl(fileOrUrl) {
-            if (fileOrUrl instanceof File || fileOrUrl instanceof Blob) {
-                return URL.createObjectURL(fileOrUrl);
-            }
-            return fileOrUrl;
+        // --- 4. 記憶體管理 ---
+        function getImageUrl(item) {
+            if (item.type === 'url') return item.data;
+            const url = URL.createObjectURL(item.data);
+            createdUrls.add(url);
+            return url;
         }
 
-        // --- 4. 圖片上傳處理 (修改版) ---
-        imageLoader.addEventListener('change', async (e) => {
+        function releaseUrls() {
+            createdUrls.forEach(url => URL.revokeObjectURL(url));
+            createdUrls.clear();
+        }
+
+        // --- 5. 互動 ---
+        tagFriendBtn.addEventListener('click', () => tagFriendBtn.classList.toggle('active'));
+        locationBtn.addEventListener('click', () => locationBtn.classList.toggle('active'));
+
+        document.getElementById('imageLoader').addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
             if (files.length === 0) return;
-
-            // 直接儲存原始檔案，不壓縮、不轉 Base64
             for (const file of files) {
-                pendingImages.push(file);
+                pendingImages.push({ type: 'file', data: file });
+                const newIdx = pendingImages.length - 1;
+                if (!selectedIndices.includes(newIdx)) selectedIndices.push(newIdx);
             }
-
-            // 更新介面
-            if (pendingImages.length > 0) {
-                emptyPlaceholder.style.display = 'none';
-                
-                const newIndex = pendingImages.length - 1;
-                currentMainIndex = newIndex;
-                if (!isSelectMode) selectedIndices = [newIndex];
-                
-                renderMainPreview();
-                renderGrid();
-            }
-            
-            // 清空 input 讓同個檔案可以重複選取
-            imageLoader.value = '';
+            currentMainIndex = pendingImages.length - 1;
+            renderMainPreview();
+            renderGrid();
+            document.getElementById('imageLoader').value = ''; 
         });
 
-        // --- 5. 渲染邏輯 ---
+        // --- 6. 渲染邏輯 ---
         function renderMainPreview() {
             if (currentMainIndex !== -1 && pendingImages[currentMainIndex]) {
                 emptyPlaceholder.style.display = 'none';
                 mainPreviewImg.style.display = 'block';
-                // 使用 getImageUrl 來生成預覽連結
-                mainPreviewImg.src = getImageUrl(pendingImages[currentMainIndex]);
+                if (mainPreviewImg.dataset.lastUrl) URL.revokeObjectURL(mainPreviewImg.dataset.lastUrl);
+                const newUrl = getImageUrl(pendingImages[currentMainIndex]);
+                mainPreviewImg.src = newUrl;
+                mainPreviewImg.dataset.lastUrl = newUrl;
             } else {
                 emptyPlaceholder.style.display = 'flex';
                 mainPreviewImg.style.display = 'none';
@@ -224,42 +222,29 @@
         }
 
         function renderGrid() {
-            let html = `
-                <div class="grid-item camera-upload-item" onclick="document.getElementById('imageLoader').click()">
-                    <i data-lucide="image-plus"></i>
-                </div>
-            `;
-            html += pendingImages.map((file, idx) => {
+            let html = `<div class="grid-item camera-upload-item" onclick="document.getElementById('imageLoader').click()"><i data-lucide="image-plus"></i></div>`;
+            html += pendingImages.map((item, idx) => {
                 const isActive = (idx === currentMainIndex);
-                const selectionIndex = selectedIndices.indexOf(idx);
-                const isSelected = selectionIndex !== -1;
-                const selectionNumber = isSelected ? selectionIndex + 1 : '';
-                
-                let classes = `grid-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`;
-                if (isSelectMode) classes += ' mode-select';
-                
-                // 使用 getImageUrl 產生縮圖
-                const src = getImageUrl(file);
-
-                return `
-                    <div class="${classes}" onclick="handleGridClick(${idx})">
-                        <img src="${src}">
-                        <div class="overlay-mask"></div>
-                        <div class="check-circle">${selectionNumber}</div>
-                    </div>
-                `;
+                const selIdx = selectedIndices.indexOf(idx);
+                const isSelected = selIdx !== -1;
+                let classes = `grid-item ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''} ${isSelectMode ? 'mode-select' : ''}`;
+                const url = getImageUrl(item);
+                return `<div class="${classes}" onclick="handleGridClick(${idx})">
+                            <img src="${url}">
+                            <div class="overlay-mask"></div>
+                            <div class="check-circle">${isSelected ? selIdx + 1 : ''}</div>
+                        </div>`;
             }).join('');
-            gridGallery.innerHTML = html;
+            feedGrid.innerHTML = html;
             lucide.createIcons();
         }
 
-        // --- 6. 互動功能 ---
         window.handleGridClick = (idx) => {
             currentMainIndex = idx;
             renderMainPreview();
             if (isSelectMode) {
-                const existingIndex = selectedIndices.indexOf(idx);
-                if (existingIndex !== -1) selectedIndices.splice(existingIndex, 1);
+                const pos = selectedIndices.indexOf(idx);
+                if (pos !== -1) selectedIndices.splice(pos, 1);
                 else selectedIndices.push(idx);
             } else {
                 selectedIndices = [idx];
@@ -267,103 +252,162 @@
             renderGrid();
         };
 
-        tagFriendBtn.addEventListener('click', () => {
-            isFriendTagged = !isFriendTagged;
-            tagFriendBtn.classList.toggle('active', isFriendTagged);
-        });
-
-        locationBtn.addEventListener('click', () => {
-            if (currentLocation) {
-                currentLocation = null;
-                locationBtn.classList.remove('active');
-            } else {
-                locationBtn.style.opacity = "0.7";
-                setTimeout(() => {
-                    currentLocation = "Kaohsiung";
-                    locationBtn.style.opacity = "1";
-                    locationBtn.classList.add('active');
-                }, 500);
-            }
-        });
-
         multiSelectBtn.addEventListener('click', () => {
             if (pendingImages.length === 0) return;
             isSelectMode = !isSelectMode;
             multiSelectBtn.classList.toggle('active', isSelectMode);
-            // 切換模式時，重置或保留當前選擇
             if (!isSelectMode && currentMainIndex !== -1) selectedIndices = [currentMainIndex];
             renderGrid();
         });
 
-        // --- 7. 儲存與發布 (Blob 版) ---
-        shareBtn.addEventListener('click', async () => {
-            if (pendingImages.length === 0) { alert("Please add photos first."); return; }
-            if (selectedIndices.length === 0) { alert("Please select at least one photo."); return; }
+        function goHome() {
+            // 移除原本會導致卡住的 shareBtn.disabled 檢查
+            releaseUrls();
+            if (mainPreviewImg.dataset.lastUrl) URL.revokeObjectURL(mainPreviewImg.dataset.lastUrl);
+            const params = new URLSearchParams(window.location.search);
+            const from = params.get('from');
+            let homeUrl = from === 'social' ? "index.html?tab=social" : "index.html";
+            try {
+                if (window.parent) window.parent.postMessage('unlockSwiping', '*');
+                channel.postMessage('updated');
+                window.top.location.href = homeUrl;
+            } catch (e) { window.location.replace(homeUrl); }
+        }
 
+        shareBtn.addEventListener('click', async () => {
+            if (selectedIndices.length === 0) { alert("請選取照片"); return; }
+            const userEmail = localStorage.getItem('myProfileEmail') || 'test@example.com';
             shareBtn.disabled = true;
-            shareBtn.textContent = "Saving...";
+            shareBtn.textContent = "傳送中...";
 
             try {
-                if (!db) await initDB();
+                const formData = new FormData();
+                formData.append("email", userEmail);
+                if (editPostId) formData.append("post_id", editPostId);
 
-                const now = new Date();
-                const dateStr = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+                // --- 🌟 採集地點與標註 ---
+                formData.append("caption", ""); // 不使用文案，固定為空
                 
-                // 取得選取的原始檔案物件 (Files)
-                const imagesToPost = selectedIndices.map(i => pendingImages[i]);
-                
-                const newPost = {
-                    id: Date.now(), 
-                    timestamp: now.getTime(), 
-                    dateString: dateStr,
-                    images: imagesToPost, // 儲存 File 物件
-                    location: currentLocation, 
-                    isFriendTagged: isFriendTagged,
-                    likes: 0, 
-                    comments: []
-                };
+                if (locationBtn.classList.contains('active')) {
+                    const locText = locationBtn.querySelector('.btn-text').innerText;
+                    formData.append("location", locText);
+                }
 
-                const tx = db.transaction(["posts_timeline", "all_photos"], "readwrite");
-                
-                tx.objectStore("posts_timeline").add(newPost);
-                
-                const memoriesStore = tx.objectStore("all_photos");
-                imagesToPost.forEach(file => {
-                    memoriesStore.add({ date: dateStr, timestamp: now.getTime(), image: file });
+                if (tagFriendBtn.classList.contains('active')) {
+                    formData.append("at_user", "Tagged"); // 模擬感：標記狀態
+                }
+
+                const keepUrls = [];
+                const uploadPromises = selectedIndices.map(async (idx) => {
+                    const item = pendingImages[idx];
+                    if (item.type === 'url') {
+                        keepUrls.push(item.data);
+                    } else {
+                        let file = item.data;
+                        if (file.size > 2 * 1024 * 1024) file = await compressImage(file);
+                        formData.append("files", file);
+                    }
                 });
+                await Promise.all(uploadPromises);
+                formData.append("keep_urls", JSON.stringify(keepUrls));
 
-                tx.oncomplete = () => {
+                const endpoint = editPostId ? "update_post" : "upload_memory_post";
+                // 🔹 加固路徑拼接：防止雙斜線導致的 405 錯誤
+                const base = API_BASE_URL.replace(/\/+$/, ''); 
+                const finalUrl = `${base}/${endpoint}`;
+
+                const response = await fetch(finalUrl, {
+                    method: "POST",
+                    body: formData
+                });
+                
+                const result = await response.json();
+                if (result.status === 'success') {
+                    // 使用統一的 BroadcastChannel 進行全域同步
                     const channel = new BroadcastChannel('memory_update');
-                    channel.postMessage('updated');
-                    window.top.location.href = "index.html";
-                };
-
-                tx.onerror = (e) => {
-                    console.error(e);
-                    alert("儲存錯誤: " + e.target.error.message);
-                    shareBtn.disabled = false;
-                    shareBtn.textContent = "Finish";
-                };
-
+                    channel.postMessage({ type: 'updated' });
+                    
+                    alert(editPostId ? "Update Success!" : "Share Success!");
+                    goHome();
+                } else {
+                    throw new Error(result.detail || "伺服器錯誤");
+                }
             } catch (err) {
                 console.error(err);
-                alert("系統錯誤: " + err.message);
+                alert("發布失敗: " + err.message);
                 shareBtn.disabled = false;
                 shareBtn.textContent = "Finish";
             }
         });
 
-        // 初始化
-        window.onunload = () => { if(db) db.close(); };
-        window.onload = () => { renderGrid(); };
-        // 進入發佈頁面時，鎖定主殼層滑動
-        window.parent.postMessage('lockSwiping', '*');
+        function compressImage(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let w = img.width, h = img.height;
+                        const MAX_SIZE = 1280;
+                        if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, w, h);
+                        canvas.toBlob((blob) => {
+                            resolve(new File([blob], file.name, { type: "image/jpeg" }));
+                        }, 'image/jpeg', 0.8);
+                    };
+                };
+            });
+        }
 
-        // 離開頁面時解鎖
-        window.addEventListener('beforeunload', () => {
-            window.parent.postMessage('unlockSwiping', '*');
-        });
-        initDB().catch(e => console.error(e));
+        backBtn.onclick = (e) => {
+            e.preventDefault();
+            if (shareBtn.disabled) return;
+            if (pendingImages.length > 0 && confirm("要捨棄內容並返回嗎？")) goHome();
+            else goHome();
+        };
+
+        window.hardReset = () => {
+            if (confirm("確定要刪除所有本地資料並登出嗎？")) {
+                indexedDB.deleteDatabase(dbName);
+                localStorage.clear();
+                window.location.reload();
+            }
+        };
+
+        window.onload = async () => {
+            const isPremium = localStorage.getItem('isPremiumUser') === 'true';
+            if (!isPremium) {
+                const tagFriendBtn = document.getElementById('tagFriendBtn');
+                if (tagFriendBtn) tagFriendBtn.style.opacity = '0.3';
+            }
+
+            if (editPostId) {
+                pageTitle.innerText = "Edit Post";
+                try {
+                    const res = await fetch(`${API_BASE_URL}/get_post/${editPostId}`);
+                    const post = await res.json();
+                    if (post.imageUrls) {
+                        originalUrls = post.imageUrls;
+                        post.imageUrls.forEach(url => {
+                            pendingImages.push({ type: 'url', data: url });
+                            selectedIndices.push(pendingImages.length - 1);
+                        });
+                    }
+                    if (post.at_user === 'Tagged') tagFriendBtn.classList.add('active');
+                    if (post.location) {
+                        locationBtn.classList.add('active');
+                        locationBtn.querySelector('.btn-text').innerText = post.location;
+                    }
+                    renderGrid();
+                } catch (e) { console.error("載入舊貼文失敗", e); }
+            } else {
+                initDB();
+            }
+        };
     </script>
 </body>
 </html>

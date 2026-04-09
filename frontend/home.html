@@ -2,7 +2,6 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Home</title>
     <style>
@@ -92,66 +91,6 @@
         
         #loading-toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.7); color: white; padding: 15px 25px; border-radius: 25px; font-size: 14px; z-index: 300; display: none; }
     
-        /* 月回顧 Overlay 基礎 */
-        .recap-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(243, 236, 229, 0.95); /* 奶油色背景 */
-            backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
-            z-index: 20000; display: none; flex-direction: column;
-            align-items: center; justify-content: center; padding: 20px;
-        }
-
-        /* 第一階段：底片觀景窗 */
-        .film-viewport {
-            width: 280px; height: 380px;
-            border: 15px solid #1a1a1a; 
-            border-radius: 8px;
-            position: relative; overflow: hidden;
-            box-shadow: 0 15px 50px rgba(0,0,0,0.4);
-            background: #000;
-        }
-        .film-reel { display: flex; flex-direction: column; }
-
-        /* 第三階段：長條捲動區 */
-        .story-strip-scroll {
-            width: 100%; max-height: 75vh;
-            overflow-y: auto; padding: 20px 0;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        /* 長條單張照片塊 */
-        .strip-item {
-            position: relative; width: 75%; background: #fff;
-            margin: 40px 0; padding: 12px 12px 30px 12px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-        }
-
-        /* 撕紙邊緣效果 */
-        .torn-edge {
-            clip-path: polygon(0% 2%, 5% 0%, 10% 3%, 15% 1%, 20% 4%, 25% 2%, 30% 5%, 35% 3%, 40% 6%, 45% 4%, 50% 7%, 55% 5%, 60% 8%, 65% 6%, 70% 9%, 75% 7%, 80% 10%, 85% 8%, 90% 10%, 95% 9%, 100% 10%, 100% 90%, 95% 92%, 90% 88%, 85% 91%, 80% 89%, 75% 93%, 70% 90%, 65% 94%, 60% 91%, 55% 95%, 50% 92%, 45% 96%, 40% 93%, 35% 97%, 30% 94%, 25% 98%, 20% 95%, 15% 99%, 10% 96%, 5% 100%, 0% 97%);
-        }
-
-        .bg-day-number {
-            position: absolute; font-size: 100px; font-family: 'Arial Black', sans-serif;
-            font-weight: 900; color: rgba(140, 115, 93, 0.08); 
-            z-index: -1; top: -30px; left: -10px;
-        }
-
-        .film-info-text {
-            position: absolute; bottom: 8px; right: 15px;
-            font-family: 'Courier New', monospace; font-size: 9px;
-            color: #d4a017; letter-spacing: 1px;
-        }
-
-        /* 控制按鈕 */
-        .recap-controls { margin-top: 20px; display: flex; gap: 15px; z-index: 20001; }
-        .share-btn { background: #8C735D; color: white; border: none; padding: 12px 20px; border-radius: 25px; font-weight: 600; }
-        .close-recap { background: white; color: #8C735D; border: 1px solid #8C735D; padding: 12px 20px; border-radius: 25px; }
-
-        @keyframes fastFlashback {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(var(--travel-distance)); }
-        }
     </style>
 </head>
 <body>
@@ -175,8 +114,8 @@
 
     <div class="footer">
         <a href="search.html" target="_top" style="text-decoration: none; display: flex;"><svg class="icon-brown" width="32" height="32" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></a>
-        <label class="shutter-btn"><div class="shutter-inner"></div></label>
-        <a href="edit.html" target="_top" style="text-decoration: none; display: flex;"><svg class="icon-brown" width="32" height="32" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></a>
+        <div class="shutter-btn"><div class="shutter-inner"></div></div>
+        <a href="edit.html?from=home" target="_top" style="text-decoration: none; display: flex;"><svg class="icon-brown" width="32" height="32" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg></a>
     </div>
 
     <input type="file" id="input_camera" accept="image/*" capture="environment" style="display: none;">
@@ -189,305 +128,228 @@
             <div class="action-btn cancel" id="btn_cancel">取消</div>
         </div>
     </div>
-
-    <div id="loading-toast">Saving...</div>
-
-    <div id="recapOverlay" class="recap-overlay">
-        <div id="recapCaptureArea" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-            <div id="recapGrid" style="width: 100%; display: flex; flex-direction: column; align-items: center;"></div>
-        </div>
-
-        <div class="recap-controls">
-            <button class="share-btn" onclick="downloadRecap()">Save & Share</button>
-            <button class="close-recap" onclick="closeRecap()">Close</button>
-        </div>
-    </div>
     
+    <script src="config.js"></script>
     <script>
-        // --- 全域變數與初始化 ---
-        const dbName = "MemoriesDB";
-        const channel = new BroadcastChannel('memory_update'); 
+        // --- 1. 全域變數與初始化 ---
+        const dbName = DB_CONFIG.name;
+        const dbVersion = DB_CONFIG.version;
+        const API_BASE_URL = DB_CONFIG.apiUrl.replace(/\/$/, ''); // 確保結尾沒有斜線
+
+        const channel = new BroadcastChannel('memory_update');
         let db;
 
-        // 1. 資料庫初始化
+        // 2. 資料庫初始化 (IndexedDB)
         function initDB() {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open(dbName, 8);
+                const request = indexedDB.open(dbName, dbVersion);
+
                 request.onupgradeneeded = (e) => {
-                    db = e.target.result;
-                    if (!db.objectStoreNames.contains("posts_timeline")) db.createObjectStore("posts_timeline", { keyPath: "id" });
-                    if (!db.objectStoreNames.contains("all_photos")) db.createObjectStore("all_photos", { autoIncrement: true });
-                    if (!db.objectStoreNames.contains("user_profile")) db.createObjectStore("user_profile");
+                    const database = e.target.result;
+                    console.log("🛠️ 正在更新資料庫結構...");
+                    const stores = ["posts", "users", "posts_timeline", "user_profile"];
+                    stores.forEach(store => {
+                        if (!database.objectStoreNames.contains(store)) {
+                            database.createObjectStore(store, { keyPath: "id" });
+                        }
+                    });
                 };
+
                 request.onsuccess = (e) => {
                     db = e.target.result;
+                    console.log("✅ IndexedDB 已連線");
                     resolve(db);
                 };
-                request.onerror = (e) => reject(e);
+
+                request.onerror = (e) => {
+                    console.error("❌ DB開啟失敗:", e.target.error);
+                    reject(e.target.error);
+                };
             });
         }
 
-        // 2. 頁面載入核心邏輯
-        window.addEventListener('load', () => {
-            initDB().then(() => {
-                loadUserProfile();
-                loadLatestPhoto();
-                // 偵測是否由通知觸發月回顧
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('action') === 'showRecap') {
-                    initRecapExperience();
-                }
-            });
-        });
-
-        // 3. 讀取使用者頭像
-        async function loadUserProfile() {
-            const avatarDiv = document.querySelector('.avatar-placeholder');
-            if (!db) await initDB();
-            const tx = db.transaction(["user_profile"], "readonly"); 
-            const store = tx.objectStore("user_profile");
-            const req = store.get("avatar");
-
-            req.onsuccess = (e) => {
-                const result = e.target.result;
-                if (avatarDiv && result) {
-                    let url = (result instanceof Blob || result instanceof File) ? URL.createObjectURL(result) : result;
-                    avatarDiv.style.backgroundImage = `url('${url}')`;
-                    avatarDiv.style.backgroundSize = 'cover';
-                    avatarDiv.style.backgroundPosition = 'center';
-                    avatarDiv.style.backgroundColor = 'transparent'; 
-                }
-            };
-        }
-
-        // 4. 讀取最新一張回憶照
+        // 3. 核心功能：載入最新照片 (對接 FastAPI)
         async function loadLatestPhoto() {
+            const imgElement = document.getElementById('displayImg');
+            if (!imgElement) return;
+
+            let latestPost = null;
+
             try {
                 const myEmail = localStorage.getItem('myProfileEmail');
                 if (!myEmail) return;
 
-                const response = await fetch('get_social_feed.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: myEmail })
-                });
-                const result = await response.json();
-
-                if (result.status === 'success' && result.data && result.data.length > 0) {
-                    const latestPost = result.data[0];
-                    let urls;
-                    
-                    // 安全解析 JSON
-                    try {
-                        urls = typeof latestPost.images_json === 'string' 
-                            ? JSON.parse(latestPost.images_json) 
-                            : latestPost.images_json;
-                    } catch(e) {
-                        urls = [];
-                    }
-
-                    if (urls && urls.length > 0) {
-                        const imgElement = document.getElementById('displayImg');
-                        imgElement.src = urls[0]; 
+                // [1] 嘗試從 API 抓取
+                const response = await fetch(`${API_BASE_URL}/get_memories?email=${myEmail}&t=${Date.now()}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    const posts = Array.isArray(result) ? result : (result.data || []);
+                    if (posts.length > 0) {
+                        latestPost = posts.sort((a, b) => b.timestamp - a.timestamp)[0];
                     }
                 }
-            } catch (e) { 
-                console.error("雲端照片讀取失敗:", e); 
+            } catch (e) {
+                console.warn("⚠️ API 抓取失敗，準備嘗試本地備案:", e);
+            }
+
+            // [2] 本地備案：如果 API 沒抓到，從 IndexedDB 抓
+            if (!latestPost && db) {
+                try {
+                    const tx = db.transaction("posts_timeline", "readonly");
+                    const store = tx.objectStore("posts_timeline");
+                    const allPosts = await new Promise(res => {
+                        store.getAll().onsuccess = (e) => res(e.target.result || []);
+                    });
+                    if (allPosts.length > 0) {
+                        latestPost = allPosts.sort((a, b) => b.timestamp - a.timestamp)[0];
+                    }
+                } catch (dbErr) {
+                    console.error("❌ 本地資料庫讀取失敗:", dbErr);
+                }
+            }
+
+            // [3] 渲染大圖
+            if (latestPost) {
+                let photoUrl = latestPost.imageUrls ? latestPost.imageUrls[0] : (latestPost.url || latestPost.imageUrl);
+                if (photoUrl) {
+                    const tempImg = new Image();
+                    tempImg.src = photoUrl;
+                    tempImg.onload = () => {
+                        imgElement.src = photoUrl;
+                        imgElement.style.opacity = "1";
+                    };
+                    return;
+                }
+            }
+
+            // [4] 無資料處理：顯示預設圖
+            imgElement.src = "https://images.unsplash.com/photo-1579954115545-a95591f28bfc?q=80&w=2070&auto=format&fit=crop";
+            console.log("ℹ️ 無貼文資料，已顯示預設封面圖");
+        }
+
+        // 4. 使用者頭像載入 (整合 API 同步版)
+        async function loadUserProfile() {
+            const avatarDiv = document.querySelector('.avatar-placeholder');
+            if (!avatarDiv) return;
+
+            const myEmail = localStorage.getItem('myProfileEmail');
+            let avatarUrl = localStorage.getItem('myProfileAvatar');
+
+            // 如果有 Email，去後端同步最新的頭像網址
+            if (myEmail) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/get_memories?email=${myEmail}&t=${Date.now()}`);
+                    const result = await response.json();
+                    const posts = Array.isArray(result) ? result : (result.data || []);
+
+                    if (posts.length > 0 && posts[0].avatar_url) {
+                        avatarUrl = posts[0].avatar_url;
+                        localStorage.setItem('myProfileAvatar', avatarUrl);
+                    }
+                } catch (e) {
+                    console.log("無法從 API 同步頭像，使用本地緩存");
+                }
+            }
+
+            if (avatarUrl && avatarUrl !== "null" && avatarUrl !== "undefined") {
+                const finalUrl = avatarUrl.includes('?') ? avatarUrl : `${avatarUrl}?t=${Date.now()}`;
+                avatarDiv.style.backgroundImage = `url('${finalUrl}')`;
+                avatarDiv.style.backgroundSize = 'cover';
+                avatarDiv.style.backgroundPosition = 'center';
+                avatarDiv.innerHTML = "";
+            } else {
+                avatarDiv.style.backgroundColor = '#9C7C66';
+                avatarDiv.style.backgroundImage = "none";
+                avatarDiv.innerHTML = '<span style="color:white; font-size:24px;">👤</span>';
+                avatarDiv.style.display = "flex";
+                avatarDiv.style.justifyContent = "center";
+                avatarDiv.style.alignItems = "center";
             }
         }
-        // 監聽跨頁面更新
-        channel.onmessage = (event) => {
-            if (event.data === 'updated') loadLatestPhoto();
-        };
 
-        // --- 檔案上傳與相機功能 ---
+        // 5. 檔案選擇與上傳邏輯
         const shutterBtn = document.querySelector('.shutter-btn');
         const actionOverlay = document.getElementById('action-sheet-overlay');
-        const toast = document.getElementById('loading-toast');
 
-        shutterBtn.addEventListener('click', (e) => { e.preventDefault(); actionOverlay.classList.add('show'); });
-        document.getElementById('btn_cancel').addEventListener('click', () => actionOverlay.classList.remove('show'));
-        document.getElementById('btn_camera').addEventListener('click', () => { document.getElementById('input_camera').click(); actionOverlay.classList.remove('show'); });
-        document.getElementById('btn_gallery').addEventListener('click', () => { document.getElementById('input_gallery').click(); actionOverlay.classList.remove('show'); });
+        if (shutterBtn) {
+            shutterBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                actionOverlay.classList.add('show');
+            });
+        }
 
-        // --- 修正：將照片傳送到雲端 upload_post.php ---
+        document.getElementById('btn_cancel')?.addEventListener('click', () => actionOverlay.classList.remove('show'));
+        document.getElementById('btn_camera')?.addEventListener('click', () => document.getElementById('input_camera').click());
+        document.getElementById('btn_gallery')?.addEventListener('click', () => document.getElementById('input_gallery').click());
+
         async function handleFileSelect(e) {
+            actionOverlay.classList.remove('show');
             const files = e.target.files;
             if (!files || files.length === 0) return;
 
-            toast.style.display = 'block';
-            toast.textContent = "Uploading...";
-
-            const formData = new FormData();
-            formData.append('email', localStorage.getItem('myProfileEmail'));
-            
-            // 將所有選取的檔案加入 FormData
-            for (let i = 0; i < files.length; i++) {
-                formData.append('images[]', files[i]);
+            const toast = document.getElementById('loading-toast');
+            if (toast) {
+                toast.style.display = 'block';
+                toast.textContent = "Uploading...";
             }
 
+            const formData = new FormData();
+            const myEmail = localStorage.getItem('myProfileEmail') || '';
+            
+            // 支援多圖或單圖上傳
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+            formData.append('email', myEmail);
+
             try {
-                const response = await fetch('upload_post.php', {
+                const response = await fetch(`${API_BASE_URL}/upload_memory_post`, {
                     method: 'POST',
-                    body: formData // 使用 FormData 傳送檔案
+                    body: formData
                 });
-                
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    toast.textContent = "Uploaded!";
-                    loadLatestPhoto(); // 重新讀取最新的圖
-                    channel.postMessage('updated'); // 通知其他頁面 (如 social.html)
-                    setTimeout(() => { toast.style.display = 'none'; }, 1500);
+                    if (toast) toast.textContent = "Uploaded!";
+                    // 重要：發送跨頁面更新通知
+                    channel.postMessage({ action: 'updated' });
+                    
+                    // 清除 input
+                    e.target.value = "";
+
+                    // 延遲更新 UI，給後端一點寫入時間
+                    setTimeout(async () => {
+                        await loadLatestPhoto();
+                        if (toast) toast.style.display = 'none';
+                    }, 1000);
                 } else {
-                    alert("Upload failed: " + result.message);
+                    throw new Error(result.detail || "上傳失敗");
                 }
             } catch (err) {
-                console.error("傳輸錯誤:", err);
-                toast.style.display = 'none';
+                console.error("上傳錯誤:", err);
+                alert("錯誤: " + err.message);
+                if (toast) toast.style.display = 'none';
             }
-            e.target.value = ''; // 清空 input
-        }
-        document.getElementById('input_camera').addEventListener('change', handleFileSelect);
-        document.getElementById('input_gallery').addEventListener('change', handleFileSelect);
-
-        // --- ★ 月回顧驚喜功能 (Film Reveal 版) ★ ---
-
-        async function initRecapExperience() {
-            if (!db) await initDB();
-            
-            const now = new Date();
-            let targetMonth = now.getMonth(); 
-            let targetYear = now.getFullYear();
-            if (targetMonth === 0) { targetMonth = 12; targetYear--; }
-
-            const tx = db.transaction("all_photos", "readonly");
-            const store = tx.objectStore("all_photos");
-            const allRecords = [];
-            
-            store.openCursor().onsuccess = (e) => {
-                const cursor = e.target.result;
-                if (cursor) {
-                    const record = cursor.value;
-                    const recordDate = new Date(record.date.replace(/-/g, '/'));
-                    // 檢查是否為上個月的照片
-                    if (recordDate.getMonth() + 1 === targetMonth && recordDate.getFullYear() === targetYear) {
-                        allRecords.push({
-                            image: record.image,
-                            day: record.date.split('-')[2] // 提取真實日期
-                        });
-                    }
-                    cursor.continue();
-                } else {
-                    if(allRecords.length > 0) {
-                        startFilmAnimation(allRecords);
-                    } else {
-                        console.log("No memories found for last month.");
-                    }
-                }
-            };
         }
 
-        function startFilmAnimation(photos) {
-            const shutterSnd = new Audio('shutter.wav'); 
-            document.getElementById('recapOverlay').style.display = 'flex';
-            const grid = document.getElementById('recapGrid');
-            grid.innerHTML = '';
-            
-            const viewport = document.createElement('div');
-            viewport.className = 'film-viewport';
-            const reel = document.createElement('div');
-            reel.className = 'film-reel';
+        document.getElementById('input_camera')?.addEventListener('change', handleFileSelect);
+        document.getElementById('input_gallery')?.addEventListener('change', handleFileSelect);
 
-            // 隨機選取 10 張進行滾動動畫
-            const selected = photos.sort(() => 0.5 - Math.random()).slice(0, 10);
-
-            selected.forEach(item => {
-                const img = document.createElement('img');
-                img.src = URL.createObjectURL(item.image);
-                img.style.width = '280px'; img.style.height = '380px'; img.style.objectFit = 'cover';
-                reel.appendChild(img);
-            });
-
-            viewport.appendChild(reel);
-            grid.appendChild(viewport);
-
-            // 觸發洗牌動畫
-            const dist = -(selected.length - 1) * 380;
-            reel.style.setProperty('--travel-distance', `${dist}px`);
-            reel.style.animation = `fastFlashback 2.5s cubic-bezier(0.66, 0, 0.34, 1) forwards`;
-
-            // 2.2 秒處播放快門聲
-            setTimeout(() => { 
-                shutterSnd.play().catch(e => console.log("Audio play blocked")); 
-            }, 2200);
-
-            // 3.2 秒處：底片動畫結束，自動展開長條膠捲 (核心連接點)
-            setTimeout(() => {
-                viewport.style.display = 'none';
-                renderVerticalStrip(selected);
-            }, 3200);
-        }
-
-        function renderVerticalStrip(photos) {
-            const grid = document.getElementById('recapGrid');
-            const scroll = document.createElement('div');
-            scroll.className = 'story-strip-scroll';
-
-            const monthName = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date());
-
-            photos.forEach((item, index) => {
-                const el = document.createElement('div');
-                el.className = 'strip-item torn-edge';
-                el.style.alignSelf = index % 2 === 0 ? 'flex-start' : 'flex-end';
-                el.style.transform = `rotate(${Math.random() * 4 - 2}deg)`;
-
-                el.innerHTML = `
-                    <div class="bg-day-number">${item.day}</div>
-                    <img src="${URL.createObjectURL(item.image)}" style="width:100%; display:block;">
-                    <div class="film-info-text">MEMORIES PRO | ${monthName} '26</div>
-                `;
-                scroll.appendChild(el);
-            });
-            grid.appendChild(scroll);
-        }
-
-        function closeRecap() {
-            document.getElementById('recapOverlay').style.display = 'none';
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-
-        // 5. 分享與下載功能
-        async function downloadRecap() {
-            const scrollContainer = document.querySelector('.story-strip-scroll');
-            if (!scrollContainer) return;
-
-            const btnText = document.querySelector('.share-btn');
-            const originalText = btnText.innerText;
-            btnText.innerText = "Capturing...";
-
-            // 確保 html2canvas 已載入
-            if (typeof html2canvas === 'undefined') {
-                alert("Please wait for the library to load.");
-                btnText.innerText = originalText;
-                return;
+        // 6. 跨頁面通訊監聽
+        channel.onmessage = (event) => {
+            if (event.data === 'updated' || event.data.action === 'updated') {
+                loadLatestPhoto();
+                loadUserProfile();
             }
+        };
 
-            html2canvas(scrollContainer, {
-                useCORS: true, 
-                scale: 2, 
-                backgroundColor: "#F3ECE5",
-                height: scrollContainer.scrollHeight,
-                windowHeight: scrollContainer.scrollHeight
-            }).then(canvas => {
-                const link = document.createElement('a');
-                link.download = `Memories_Recap_${Date.now()}.png`;
-                link.href = canvas.toDataURL("image/png");
-                link.click();
-                btnText.innerText = originalText;
-                alert("Long-scroll recap saved! ✨");
+        // 7. 啟動
+        window.addEventListener('load', () => {
+            initDB().then(() => {
+                loadUserProfile();
+                loadLatestPhoto();
             });
-        }
+        });
     </script>
 </body>
 </html>

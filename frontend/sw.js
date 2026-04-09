@@ -1,5 +1,5 @@
 // 定義快取名稱
-const CACHE_NAME = 'memories-app-v1';
+const CACHE_NAME = 'memories-app-v2';
 
 // 定義需要快取的資源清單
 const ASSETS_TO_CACHE = [
@@ -26,7 +26,6 @@ const ASSETS_TO_CACHE = [
   './manifest.json',
 
   // 靜態圖片資源 (您清單中的 12 張照片)
-  './favicon.ico', // 👈 務必確保 VS Code 裡有這個檔案
   './IMG_1940.jpg',
   './IMG_3535.jpg',
   './IMG_3604.jpg',
@@ -75,16 +74,20 @@ self.addEventListener('activate', (event) => {
 
 // 3. 攔截請求 (Fetch)：實現離線瀏覽
 self.addEventListener('fetch', (event) => {
-  // 對於外部圖示庫或本地資源，採取「快取優先」策略
+  // 1. 排除非 GET 請求 (例如 POST 註冊資料)，直接走網路
+  if (event.request.method !== 'GET') {
+    return; 
+  }
+
+  // 2. 排除 API 請求 (假設您的 API 網址包含 :8000)
+  if (event.request.url.includes(':8000')) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
-      // 如果快取中有，就直接回傳；否則發送網路請求
-      return response || fetch(event.request).then((networkResponse) => {
-        // 選擇性：可以把新請求到的資源也存入快取
-        return networkResponse;
-      });
-    }).catch(() => {
-      // 如果網路斷掉且快取也沒有，可以在這裡回傳一個自定義的離線頁面
+      // 策略：快取優先
+      return response || fetch(event.request);
     })
   );
 });

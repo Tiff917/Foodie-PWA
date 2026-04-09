@@ -4,7 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Login Screen - Morandi Palette</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#D7BDB0">
+    <!-- iOS PWA 支援 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Foodie">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('🚀 PWA: Service Worker 註冊成功', reg.scope))
+                    .catch(err => console.log('❌ PWA: Service Worker 註冊失敗', err));
+            });
+        }
+    </script>
     <style>
         /* CSS 重置 */
         * {
@@ -281,15 +299,44 @@
         <div class="home-indicator"></div>
     </div>
 
-<script>
+    <script src="config.js"></script>
+    <script>
+        // --- 1. 配置與初始化 ---
+        const API_BASE_URL = DB_CONFIG.apiUrl.replace(/\/$/, '');
+        const dbName = DB_CONFIG.name;
+        const dbVersion = DB_CONFIG.version;
+        let db;
 
-        // 進入登入頁面時，鎖定主殼層滑動以利輸入
+        // ★ 核心修正：防止狂閃。如果已經有 Email，且不是剛剛點登出，就直接回首頁
+        const userEmail = localStorage.getItem('myProfileEmail');
+        if (userEmail && !window.location.search.includes('status=loggedout')) {
+            window.top.location.href = 'index.html'; 
+        }
+        
+        // 進入時鎖定滑動
         window.parent.postMessage('lockSwiping', '*');
+        window.addEventListener('beforeunload', () => window.parent.postMessage('unlockSwiping', '*'));
 
-        // 離開頁面準備跳轉前，解鎖滑動
-        window.addEventListener('beforeunload', () => {
-            window.parent.postMessage('unlockSwiping', '*');
-        });
+        // --- 2. 資料庫初始化 ---
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName, dbVersion);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains("user_profile")) {
+                        db.createObjectStore("user_profile");
+                    }
+                    if (!db.objectStoreNames.contains("posts_timeline")) {
+                        db.createObjectStore("posts_timeline", { keyPath: "id" });
+                    }
+                };
+                request.onsuccess = (e) => {
+                    db = e.target.result;
+                    resolve(db);
+                };
+                request.onerror = (e) => reject(e.target.error);
+            });
+        }
 
         const togglePassword = document.getElementById('togglePassword');
         const passwordInput = document.getElementById('passwordInput');
@@ -298,62 +345,95 @@
         const emailWrapper = document.getElementById('emailWrapper');
         const passwordWrapper = document.getElementById('passwordWrapper');
 
-        // 1. 切換密碼顯示/隱藏
         togglePassword.addEventListener('click', function () {
-            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-            passwordInput.setAttribute('type', type);
-            
-            this.classList.toggle('bx-hide');
-            this.classList.toggle('bx-show');
+            const isPw = passwordInput.type === 'password';
+            passwordInput.type = isPw ? 'text' : 'password';
+            this.classList.toggle('bx-hide', !isPw);
+            this.classList.toggle('bx-show', isPw);
         });
 
-        // 2. 登入按鈕點擊事件
-        loginBtn.addEventListener('click', function () {
+        // --- 3. 登入邏輯 ---
+        loginBtn.addEventListener('click', async function () {
             const emailValue = emailInput.value.trim();
             const passwordValue = passwordInput.value.trim();
-            let isValid = true;
-
+            
             emailWrapper.classList.remove('error');
             passwordWrapper.classList.remove('error');
 
-            if (emailValue === "") {
-                emailWrapper.classList.add('error');
-                isValid = false;
+            if (!emailValue || !passwordValue) {
+                if (!emailValue) emailWrapper.classList.add('error');
+                if (!passwordValue) passwordWrapper.classList.add('error');
+                return;
             }
 
-            if (passwordValue === "") {
-                passwordWrapper.classList.add('error');
-                isValid = false;
-            }
+            loginBtn.textContent = 'Verifying...';
+            loginBtn.disabled = true;
 
-            if (isValid) {
-                // --- ★ 修改處：抓取 Email 並儲存 ---
-                localStorage.setItem('myProfileEmail', emailValue);
-                
-                // (選用) 如果這台電腦之前沒登入過，名字可能是空的，我們可以先給一個預設值，避免 Profile 顯示空白
-                if (!localStorage.getItem('myProfileName')) {
-                    localStorage.setItem('myProfileName', "Me");
+            try {
+                const response = await fetch(`${API_BASE_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: emailValue, password: passwordValue })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    console.log("✅ 登入成功，正在淨化環境...");
+
+                    // A. 清空舊快取
+                    localStorage.clear();
+
+                    // B. 存入新資訊
+                    localStorage.setItem('myProfileEmail', data.email);
+                    localStorage.setItem('myProfileName', data.name);
+                    localStorage.setItem('isPremiumUser', data.is_premium.toString());
+                    if (data.avatar_url) {
+                        localStorage.setItem('myProfileAvatar', data.avatar_url);
+                    }
+
+                    // C. 徹底刪除舊資料庫 (使用變數 dbName)
+                    const dbDeleteReq = indexedDB.deleteDatabase(dbName);
+
+                    dbDeleteReq.onsuccess = async () => {
+                        // D. 重新同步資料
+                        db = await initDB();
+                        const tx = db.transaction("user_profile", "readwrite");
+                        const store = tx.objectStore("user_profile");
+                        store.put(data.name, "username");
+                        if (data.avatar_url) store.put(data.avatar_url, "avatar_remote_url");
+
+                        tx.oncomplete = () => {
+                            const channel = new BroadcastChannel('memory_update');
+                            channel.postMessage('updated');
+                            console.log("👋 環境淨化完成，跳轉首頁");
+                            window.top.location.href = "index.html"; 
+                        };
+                    };
+                } else {
+                    alert(data.detail || "Login failed.");
+                    resetBtn();
                 }
-                // --- ★ 修改處結束 ---
+            } catch (error) {
+                console.error(error);
+                alert('Connection failed.');
+                resetBtn();
+            }
+        });
 
-                // 為了展示效果，這裡加上簡單的按鈕 Loading 狀態
-                loginBtn.textContent = 'Logging in...';
-                loginBtn.style.backgroundColor = '#6D5D55';
-                
-                setTimeout(() => {
-                    // 登入成功
-                    window.parent.postMessage('unlockSwiping', '*'); 
-                    window.top.location.href = "index.html"; 
-                }, 1000);
-            }
+        function resetBtn() {
+            loginBtn.textContent = 'Log in';
+            loginBtn.disabled = false;
+            emailWrapper.classList.add('error');
+            passwordWrapper.classList.add('error');
+        }
+
+        document.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loginBtn.click();
         });
-        
-        // 增加鍵盤輸入體驗：按 Enter 觸發登入
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                loginBtn.click();
-            }
-        });
+
+        // 初始化資料庫連線
+        initDB(); 
     </script>
 </body>
 </html>
