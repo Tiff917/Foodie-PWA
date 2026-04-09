@@ -120,6 +120,7 @@ async def upload_memory_post(
     files: List[UploadFile] = File(...), 
     caption: Optional[str] = Form(None), 
     location: Optional[str] = Form(None), 
+    at_user: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
     # --- 🛠️ 帳號自動補全系統 ---
@@ -146,6 +147,7 @@ async def upload_memory_post(
         timestamp=int(time.time()*1000), 
         caption=caption, 
         location=location,
+        at_user=at_user,
         content_type="album" if len(files) > 1 else "single"
     )
     db.add(new_post); db.commit()

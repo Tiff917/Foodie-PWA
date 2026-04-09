@@ -261,16 +261,15 @@
         });
 
         function goHome() {
-            // 移除原本會導致卡住的 shareBtn.disabled 檢查
             releaseUrls();
             if (mainPreviewImg.dataset.lastUrl) URL.revokeObjectURL(mainPreviewImg.dataset.lastUrl);
             const params = new URLSearchParams(window.location.search);
             const from = params.get('from');
             let homeUrl = from === 'social' ? "index.html?tab=social" : "index.html";
             try {
-                if (window.parent) window.parent.postMessage('unlockSwiping', '*');
-                channel.postMessage('updated');
-                window.top.location.href = homeUrl;
+                const bc = new BroadcastChannel('memory_update');
+                bc.postMessage({ type: 'updated' });
+                window.location.replace(homeUrl);
             } catch (e) { window.location.replace(homeUrl); }
         }
 
@@ -285,8 +284,7 @@
                 formData.append("email", userEmail);
                 if (editPostId) formData.append("post_id", editPostId);
 
-                // --- 🌟 採集地點與標註 ---
-                formData.append("caption", ""); // 不使用文案，固定為空
+                formData.append("caption", ""); 
                 
                 if (locationBtn.classList.contains('active')) {
                     const locText = locationBtn.querySelector('.btn-text').innerText;
@@ -294,7 +292,7 @@
                 }
 
                 if (tagFriendBtn.classList.contains('active')) {
-                    formData.append("at_user", "Tagged"); // 模擬感：標記狀態
+                    formData.append("at_user", "Tagged");
                 }
 
                 const keepUrls = [];
@@ -312,7 +310,6 @@
                 formData.append("keep_urls", JSON.stringify(keepUrls));
 
                 const endpoint = editPostId ? "update_post" : "upload_memory_post";
-                // 🔹 加固路徑拼接：防止雙斜線導致的 405 錯誤
                 const base = API_BASE_URL.replace(/\/+$/, ''); 
                 const finalUrl = `${base}/${endpoint}`;
 
@@ -323,9 +320,8 @@
                 
                 const result = await response.json();
                 if (result.status === 'success') {
-                    // 使用統一的 BroadcastChannel 進行全域同步
-                    const channel = new BroadcastChannel('memory_update');
-                    channel.postMessage({ type: 'updated' });
+                    const bc = new BroadcastChannel('memory_update');
+                    bc.postMessage({ type: 'updated' });
                     
                     alert(editPostId ? "Update Success!" : "Share Success!");
                     goHome();

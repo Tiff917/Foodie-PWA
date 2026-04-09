@@ -161,29 +161,29 @@
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            overflow-x: auto !important; /* 改為 auto 以啟用原生慣性滑動 */
+            overflow-x: auto !important;
             overflow-y: hidden !important;
             width: 100% !important;
             height: 100% !important;
             scroll-snap-type: x mandatory !important;
             scroll-behavior: smooth; 
-            scroll-padding: 0 0px; /* 調整邊距讓對齊更自然 */
+            scroll-padding: 0 0px;
             -webkit-overflow-scrolling: touch; 
-            scrollbar-width: none; /* 隱藏 Firefox 捲軸 */
-            -ms-overflow-style: none; /* 隱藏 IE 捲軸 */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
             touch-action: pan-x !important;
             overscroll-behavior-x: contain;
             position: relative;
             z-index: 5;
         }
-        .slider::-webkit-scrollbar { display: none; } /* 隱藏 Chrome/Safari 捲軸 */
+        .slider::-webkit-scrollbar { display: none; }
 
         .slide-item {
             flex: 0 0 100% !important;
             width: 100% !important;
             height: 100% !important;
             scroll-snap-align: start !important;
-            scroll-snap-stop: always !important; /* 核心：防止跳頁，增加阻尼感 */
+            scroll-snap-stop: always !important;
             will-change: transform;
             display: block !important;
         }
