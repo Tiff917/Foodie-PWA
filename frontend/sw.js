@@ -1,5 +1,5 @@
 // 定義快取名稱
-const CACHE_NAME = 'memories-app-v2';
+const CACHE_NAME = 'memories-app-v3'; // 🚀 升級版本號以刷新手機快取
 
 // 定義需要快取的資源清單
 const ASSETS_TO_CACHE = [

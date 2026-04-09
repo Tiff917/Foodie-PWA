@@ -1,10 +1,20 @@
 // --- 1. 全域配置 ---
 const DB_CONFIG = {
     name: "MemoriesDB",
-    version: 18, // 統一版本號
-    apiUrl: (window.location.origin.includes(':') 
-            ? (window.location.origin.includes(':5000') ? window.location.origin.replace(':5000', ':8000') : window.location.origin)
-            : "http://127.0.0.1:8000") + "/api"
+    version: 18,
+    apiUrl: (function() {
+        const origin = window.location.origin;
+        // 如果是 ngrok 或真實域名 (HTTPS)
+        if (origin.includes('ngrok-free.app') || (origin.startsWith('https') && !origin.includes('localhost'))) {
+            return origin + "/api";
+        }
+        // 如果是本地 5000 端口，轉向 8000
+        if (origin.includes(':5000')) {
+            return origin.replace(':5000', ':8000') + "/api";
+        }
+        // 預設或 IP 連線
+        return origin + "/api";
+    })()
 };
 
 // --- 2. 通用資料庫初始化 (整合自 db.js) ---

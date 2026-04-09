@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>My Memories PWA</title>
+    <title>Foodie PWA</title>
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Memories">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Foodie">
     <link rel="apple-touch-icon" href="icon-192.png">
     <meta name="theme-color" content="#F3ECE5">
     
@@ -29,6 +29,8 @@
             height: 100%;
             overflow: hidden; 
             background-color: #F3ECE5;
+            overscroll-behavior-y: contain; /* 🔹 防止 iOS 邊界彈跳 */
+            touch-action: pan-y; /* 🔹 確保垂直捲動順暢 */
         }
 
         .wrapper {
