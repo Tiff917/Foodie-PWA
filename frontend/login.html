@@ -379,12 +379,9 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    console.log("✅ 登入成功，正在淨化環境...");
+                    console.log("✅ 登入成功，正在快速同步環境...");
 
-                    // A. 清空舊快取
-                    localStorage.clear();
-
-                    // B. 存入新資訊
+                    // A. 快速存入關鍵資訊
                     localStorage.setItem('myProfileEmail', data.email);
                     localStorage.setItem('myProfileName', data.name);
                     localStorage.setItem('isPremiumUser', data.is_premium.toString());
@@ -392,23 +389,28 @@
                         localStorage.setItem('myProfileAvatar', data.avatar_url);
                     }
 
-                    // C. 徹底刪除舊資料庫 (使用變數 dbName)
-                    const dbDeleteReq = indexedDB.deleteDatabase(dbName);
+                    // B. 「溫和式」清理資料庫：改用 clear 取代重刪
+                    const db = await initDB();
+                    const tx = db.transaction(["user_profile", "posts_timeline"], "readwrite");
+                    
+                    // 清空舊帳號資料
+                    tx.objectStore("user_profile").clear();
+                    tx.objectStore("posts_timeline").clear();
+                    
+                    // 寫入新帳號基本資訊
+                    const profileStore = tx.objectStore("user_profile");
+                    profileStore.put(data.name, "username");
+                    if (data.avatar_url) profileStore.put(data.avatar_url, "avatar_remote_url");
 
-                    dbDeleteReq.onsuccess = async () => {
-                        // D. 重新同步資料
-                        db = await initDB();
-                        const tx = db.transaction("user_profile", "readwrite");
-                        const store = tx.objectStore("user_profile");
-                        store.put(data.name, "username");
-                        if (data.avatar_url) store.put(data.avatar_url, "avatar_remote_url");
+                    tx.oncomplete = () => {
+                        console.log("👋 環境優化完成，即刻跳轉");
+                        // 使用 replace 取代 href，防止瀏覽器回退卡頓
+                        window.top.location.replace("index.html"); 
+                    };
 
-                        tx.oncomplete = () => {
-                            const channel = new BroadcastChannel('memory_update');
-                            channel.postMessage('updated');
-                            console.log("👋 環境淨化完成，跳轉首頁");
-                            window.top.location.href = "index.html"; 
-                        };
+                    tx.onerror = (err) => {
+                        console.error("❌ 清理失敗:", err);
+                        window.top.location.replace("index.html");
                     };
                 } else {
                     alert(data.detail || "Login failed.");

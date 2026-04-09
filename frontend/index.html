@@ -85,6 +85,7 @@
         const page = path.split("/").pop();
         if (!userEmail) {
             if (page !== "login.html" && page !== "signup.html") {
+                // 使用 replace 防止生成無效的歷史紀錄
                 window.location.replace("login.html");
                 return;
             }

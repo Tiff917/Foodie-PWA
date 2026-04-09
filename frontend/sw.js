@@ -79,8 +79,8 @@ self.addEventListener('fetch', (event) => {
     return; 
   }
 
-  // 2. 排除 API 請求 (假設您的 API 網址包含 :8000)
-  if (event.request.url.includes(':8000')) {
+  // 2. 排除 API 請求 (排除路徑中包含 /api 的所有請求)
+  if (event.request.url.includes('/api')) {
     return;
   }
 
