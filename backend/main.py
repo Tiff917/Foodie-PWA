@@ -113,6 +113,10 @@ async def upload_avatar(request: Request, email: str = Form(...), file: UploadFi
     target_user.avatar_url = url; db.commit()
     return {"success": True, "avatar_url": url}
 
+@api_router.get("/ping")
+async def ping():
+    return {"status": "ok", "message": "Foodie API is alive"}
+
 @api_router.post("/upload_memory_post")
 async def upload_memory_post(
     request: Request, 

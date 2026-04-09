@@ -15,7 +15,7 @@ def test_upload_flow():
             # 0. 檢查服務是否在線
             print("[0/3] 正在檢查後端連線狀態...")
             try:
-                ping_resp = client.get(f"{base_url}/ping")
+                ping_resp = client.get(f"{base_url}/api/ping")
                 if ping_resp.status_code == 200:
                     print(f"✅ 後端已在線: {ping_resp.json()}")
                 else:
@@ -31,7 +31,7 @@ def test_upload_flow():
             file1 = ("test_quick.jpg", io.BytesIO(b"fake image data 1"), "image/jpeg")
             
             resp1 = client.post(
-                f"{base_url}/upload_memory_post",
+                f"{base_url}/api/upload_memory_post",
                 data={"email": test_email, "caption": "Quick Upload Test"},
                 files={"files": file1}
             )
@@ -50,7 +50,7 @@ def test_upload_flow():
             ]
             
             resp2 = client.post(
-                f"{base_url}/upload_memory_post",
+                f"{base_url}/api/upload_memory_post",
                 data={"email": test_email, "caption": "Multi-photo Edit Test"},
                 files=files
             )
@@ -63,7 +63,7 @@ def test_upload_flow():
 
             # 3. 驗證讀取
             print("[3/3] 驗證上傳後的資料是否可讀取...")
-            read_resp = client.get(f"{base_url}/get_memories?email={test_email}")
+            read_resp = client.get(f"{base_url}/api/get_memories?email={test_email}")
             if read_resp.status_code == 200:
                 memories = read_resp.json()
                 print(f"✅ 成功讀取到 {len(memories)} 筆紀錄")
